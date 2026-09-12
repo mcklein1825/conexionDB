@@ -1,62 +1,69 @@
 import psycopg2
-from psycopg2 import OperationalError
+from urllib.parse import urlparse
 import os
-from dotenv import load_dotenv
 
-# Cargar variables de entorno desde .env si existe
-load_dotenv()
+# ---------------------------------------------------------
+# CONFIGURACIÓN
+# Reemplaza 'AQUI_TU_CONTRASEÑA' con la contraseña que 
+# acabas de copiar del botón "Show password" en Neon.
+# ---------------------------------------------------------
+DB_PASSWORD = "npg_ZS2iLNo6Uftk" 
 
-# Opción 1: Usar variable de entorno (RECOMENDADO - más seguro)
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Construcción de la URL de conexión basada en tus datos de pantalla
+# Host: ep-twilight-poetry-aea6tyq3.us-east-2.aws.neon.tech (inferido de tu ID de branch)
+# DB: neondb
+# User: neondb_owner
+DATABASE_URL = f"postgresql://neondb_owner:{DB_PASSWORD}@ep-twilight-poetry-aea6tyq3.us-east-2.aws.neon.tech/neondb?sslmode=require"
 
-# Opción 2: Connection string directo (solo para desarrollo)
-# Reemplaza con tu connection string real de Neon
-# Lo encuentras en: https://console.neon.tech -> tu proyecto -> Connection Details
-if not DATABASE_URL:
-    DATABASE_URL = "postgresql://usuario:password@ep-old-morning-ae89tbp3.us-east-2.aws.neon.tech/neondb?sslmode=require"
-    # ⚠️ IMPORTANTE: 
-    # 1. Reemplaza 'usuario' con tu username de Neon
-    # 2. Reemplaza 'password' con tu password (NO uses tu email/password de login)
-    # 3. El host debe ser como: ep-xxx-xxx.region.aws.neon.tech
-    # 4. Asegúrate de incluir ?sslmode=require
-
-def conectar():
-    """Establece conexión con Neon DB"""
+def conectar_neon():
     try:
-        conn = psycopg2.connect(DATABASE_URL)
-        print("✅ Conexión exitosa a Neon DB!")
+        print("🔄 Intentando conectar a Neon...")
         
-        # Crear cursor para ejecutar consultas
+        # Parsear la URL para extraer los componentes
+        url = urlparse(DATABASE_URL)
+        
+        # Establecer la conexión
+        conn = psycopg2.connect(
+            host=url.hostname,
+            database=url.path[1:],  # Elimina la '/' inicial de '/neondb'
+            user=url.username,
+            password=url.password,
+            port=url.port or 5432,
+            sslmode='require'       # Neon exige SSL
+        )
+        
+        print("✅ ¡Conexión exitosa!")
+        
+        # Crear un cursor para ejecutar consultas
         cur = conn.cursor()
         
-        # Verificar conexión obteniendo versión de PostgreSQL
-        cur.execute("SELECT version();")
-        db_version = cur.fetchone()
-        print(f"📊 Versión de PostgreSQL: {db_version[0][:50]}...")
+        # Consulta de prueba: Obtener versión y usuario actual
+        cur.execute("SELECT version(), current_user, current_database();")
+        data = cur.fetchone()
         
-        # Ejemplo: listar tablas
-        cur.execute("""
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'public';
-        """)
-        tablas = cur.fetchall()
-        print(f"📁 Tablas encontradas: {[t[0] for t in tablas]}")
+        print("\n--- Detalles de la Conexión ---")
+        print(f"Versión PostgreSQL: {data[0].split(',')[0]}") # Muestra solo la versión
+        print(f"Usuario Conectado:  {data[1]}")
+        print(f"Base de Datos:      {data[2]}")
+        print("-----------------------------\n")
         
+        # Cerrar recursos
         cur.close()
-        return conn
+        conn.close()
+        print("🔒 Conexión cerrada correctamente.")
         
-    except OperationalError as e:
-        print(f"❌ Error de conexión: {e}")
-        print("\n💡 Posibles causas:")
-        print("   1. Connection string incorrecto")
-        print("   2. Password inválido (usa el de DB, no el de tu cuenta)")
-        print("   3. Firewall/IP restringida (revisa settings en Neon console)")
-        print("   4. SSL no habilitado (asegúrate de usar ?sslmode=require)")
-        return None
+        return True
+
+    except psycopg2.OperationalError as e:
+        print(f"❌ Error de conexión (Operacional): {e}")
+        print("💡 Verifica:")
+        print("   1. Que la contraseña sea la correcta (sin espacios extra).")
+        print("   2. Que tu IP no esté bloqueada (aunque Neon suele estar abierto por defecto).")
+        return False
+    except Exception as e:
+        print(f"❌ Error inesperado: {e}")
+        return False
 
 if __name__ == "__main__":
-    conexion = conectar()
-    if conexion:
-        print("\n✅ ¡Conexión establecida correctamente!")
-        conexion.close()
+    # Asegúrate de tener instalado: pip install psycopg2-binary
+    conectar_neon()
